@@ -10,19 +10,19 @@ load_dotenv()
 
 class RAGService:
     def __init__(self):
-        # Configure for xAI (Grok)
-        api_key = os.getenv("XAI_API_KEY")
-        if not api_key or api_key == "your_key_here":
-            print("WARNING: XAI_API_KEY not set. Chat features will fail.")
+        # Configure for Groq (OpenAI-compatible)
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            print("WARNING: GROQ_API_KEY not set. Chat features will fail.")
             self.client = None
         else:
             self.client = OpenAI(
                 api_key=api_key,
-                base_url="https://api.x.ai/v1"
+                base_url="https://api.groq.com/openai/v1"
             )
         self.embedding_service = EmbeddingService()
         self.retrieval_service = retrieval_service
-        self.model = "grok-beta" # xAI Model
+        self.model = "llama-3.3-70b-versatile" # High-performance Groq model
 
     async def process_document(self, file_path: str, filename: str):
         """
