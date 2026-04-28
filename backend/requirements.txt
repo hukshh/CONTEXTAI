@@ -2,3 +2,11 @@ fastapi
 uvicorn
 python-multipart
 pydantic
+openai
+faiss-cpu
+pypdf
+tiktoken
+python-dotenv
+numpy
+sentence-transformers
+torch
