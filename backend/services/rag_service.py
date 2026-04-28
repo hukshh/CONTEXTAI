@@ -26,24 +26,37 @@ class RAGService:
         self.retrieval_service = retrieval_service
         self.model = "llama-3.3-70b-versatile" # High-performance Groq model
 
-    async def process_document(self, file_path: str, filename: str):
+    def process_document(self, file_path: str, filename: str):
         """
         Full pipeline for document processing: Load -> Chunk -> Embed -> Store
+        Runs in a background thread to avoid blocking the event loop.
         """
-        # 1. Extract
-        pages_content = extract_text_from_pdf(file_path)
-        
-        # 2. Chunk
-        chunks = chunk_text(pages_content, filename)
-        
-        # 3. Embed
-        texts = [c["text"] for c in chunks]
-        embeddings = self.embedding_service.get_embeddings(texts)
-        
-        # 4. Store
-        self.retrieval_service.add_documents(embeddings, chunks)
-        
-        return len(chunks)
+        try:
+            # 1. Clear existing version
+            self.retrieval_service.delete_document(filename)
+            
+            # 2. Extract
+            pages_content = extract_text_from_pdf(file_path)
+            
+            # 3. Chunk
+            chunks = chunk_text(pages_content, filename)
+            
+            if not chunks:
+                print(f"Warning: No text extracted from {filename}")
+                return 0
+                
+            # 4. Embed
+            texts = [c["text"] for c in chunks]
+            embeddings = self.embedding_service.get_embeddings(texts)
+            
+            # 5. Store
+            self.retrieval_service.add_documents(embeddings, chunks)
+            
+            print(f"Success: Processed {filename} ({len(chunks)} chunks)")
+            return len(chunks)
+        except Exception as e:
+            print(f"Error processing document {filename}: {e}")
+            return 0
 
     async def rewrite_query(self, query: str) -> str:
         """
@@ -53,7 +66,8 @@ class RAGService:
             return query
             
         prompt = f"""Rewrite the following user query to be a clear, detailed search query grounded in document context.
-If the query is short (e.g., "in detail", "more", "explain"), expand it appropriately (e.g., "Provide more details about the previous topic from the document").
+- If the query is short (e.g., "in detail", "more", "explain"), expand it (e.g., "Provide more details about the previous topic from the document").
+- If the user asks for a "summary" or "overview", rewrite it as: "Provide a comprehensive overview of the main topics, key concepts, and important details discussed in the provided text."
 Return ONLY the rewritten query text.
 
 Original query: {query}
@@ -71,26 +85,35 @@ Original query: {query}
             print(f"Error rewriting query: {e}")
             return query
 
-    async def answer_question(self, question: str):
+    async def answer_question(self, question: str, selected_docs: list[str] = None):
         """
         Improved pipeline for query: Rewrite -> Embed -> Retrieve -> Generate
         """
-        # 1. Rewrite query for better retrieval
+        # 1. Detect if it's a summary request
+        is_summary = any(word in question.lower() for word in ["summary", "summarize", "overview", "sumamry"])
+        
+        # 2. Rewrite query
         rewritten_query = await self.rewrite_query(question)
         
-        # 2. Embed rewritten query
+        # 3. Embed rewritten query
         query_embedding = self.embedding_service.get_embedding(rewritten_query)
         
-        # 3. Retrieve (top-k=5)
-        relevant_chunks = self.retrieval_service.search(query_embedding, k=5)
+        # 4. Retrieve (Include filtering by selected_docs)
+        k = 10 if is_summary else 5
+        relevant_chunks = self.retrieval_service.search(query_embedding, k=k, selected_docs=selected_docs)
         
         if not relevant_chunks:
+            if selected_docs:
+                return {
+                    "answer": f"No relevant information found in the selected documents: {', '.join(selected_docs)}.",
+                    "sources": []
+                }
             return {
-                "answer": "No documents uploaded yet. Please upload a PDF first.",
+                "answer": "I don't have any document context yet. Please upload a PDF and make sure it's selected!",
                 "sources": []
             }
-
-        # 4. Combine context structure
+            
+        # Combine context structure for LLM
         context = "\n---\n".join([f"[Source: {c['document_name']}, Page: {c['page_number']}]\n{c['text']}" for c in relevant_chunks])
         
         if not self.client:
@@ -99,12 +122,13 @@ Original query: {query}
                 "sources": []
             }
 
-        # 5. Generate response with balanced grounding and helpfulness
-        prompt = f"""Answer the question using ONLY the provided context below.
+        # 6. Generate response
+        prompt = f"""Answer the question using the provided context below.
 
-- If the full answer is available, provide a complete and detailed response.
-- If only partial information is available, provide the best possible answer based on the context and clearly mention that the information is incomplete.
-- If no relevant information is found in the context at all, only then say: 'Not fully available in document.'
+- If the user asks for a summary, use the provided context fragments to give a comprehensive overview of the topics mentioned.
+- provide a detailed and helpful response based on the available information.
+- If the answer is partially available, provide the best possible response from the context.
+- ONLY say 'Not fully available in document' if the context is completely irrelevant to the question.
 
 Context:
 {context}
@@ -117,7 +141,7 @@ Question:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a helpful document assistant. You prioritize accuracy and context grounding, but you provide partial information if it helps answer the query."},
+                    {"role": "system", "content": "You are a helpful document assistant. You prioritize accuracy and context grounding."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0
@@ -128,13 +152,57 @@ Question:
             print(f"Error calling LLM API: {e}")
             answer = f"Error calling LLM API: {str(e)}"
         
-        # Extract sources
-        sources = list(set([c["document_name"] for c in relevant_chunks]))
+        # Extract top unique sources with cleaned snippets
+        source_list = []
+        seen_pages = set()
+        
+        for c in relevant_chunks:
+            page_key = f"{c['document_name']}_{c['page_number']}"
+            if page_key not in seen_pages:
+                text = " ".join(c['text'].split())
+                limit = 140
+                if len(text) > limit:
+                    snippet = text[:limit].rsplit(' ', 1)[0] + "..."
+                else:
+                    snippet = text
+                
+                source_list.append({
+                    "document": c['document_name'],
+                    "page": c['page_number'],
+                    "snippet": snippet
+                })
+                seen_pages.add(page_key)
+            
+            if len(source_list) >= 3:
+                break
         
         return {
             "answer": answer,
-            "sources": sources,
-            "rewritten_query": rewritten_query # Included for transparency
+            "sources": source_list,
+            "rewritten_query": rewritten_query
         }
+
+    def delete_file(self, filename: str):
+        """Removes file from disk and vector store."""
+        # 1. Remove from vector store
+        self.retrieval_service.delete_document(filename)
+        
+        # 2. Remove from disk
+        file_path = os.path.join("uploads", filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            return True
+        return False
+
+    def clear_all(self):
+        """Resets the entire system."""
+        # 1. Reset vector store
+        self.retrieval_service.clear_all()
+        
+        # 2. Clear uploads folder
+        if os.path.exists("uploads"):
+            for f in os.listdir("uploads"):
+                os.remove(os.path.join("uploads", f))
+        return True
 
 rag_service = RAGService()
