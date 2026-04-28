@@ -4,10 +4,17 @@ from sentence_transformers import SentenceTransformer
 
 class EmbeddingService:
     def __init__(self):
-        # Using a popular, lightweight local model
         self.model_name = "all-MiniLM-L6-v2"
-        self.model = SentenceTransformer(self.model_name)
+        self._model = None
         self.dimension = 384
+
+    @property
+    def model(self):
+        if self._model is None:
+            print(f"Loading/Downloading embedding model ({self.model_name})... This may take a moment on the first run.")
+            self._model = SentenceTransformer(self.model_name)
+            print("Embedding model loaded successfully.")
+        return self._model
 
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
