@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { uploadFile } from '../services/api';
 
 interface SidebarProps {
-  files: string[];
+  files: {name: string, isIndexed: boolean}[];
   selectedFiles: string[];
   onUploadSuccess: (filename: string) => void;
   onSelectionChange: (selected: string[]) => void;
@@ -118,35 +118,44 @@ const Sidebar: React.FC<SidebarProps> = ({
           files.map((file, index) => (
             <li 
               key={index} 
-              className={`file-item ${selectedFiles.includes(file) ? 'active' : ''}`}
+              className={`file-item ${selectedFiles.includes(file.name) ? 'active' : ''}`}
               style={{ 
-                cursor: 'pointer', 
-                backgroundColor: selectedFiles.includes(file) ? 'rgba(0,0,0,0.04)' : 'transparent',
+                cursor: file.isIndexed ? 'pointer' : 'default', 
+                backgroundColor: selectedFiles.includes(file.name) ? 'rgba(0,0,0,0.04)' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px'
+                gap: '10px',
+                opacity: file.isIndexed ? 1 : 0.7
               }}
-              onClick={() => toggleFileSelection(file)}
+              onClick={() => file.isIndexed && toggleFileSelection(file.name)}
             >
               <input 
                 type="checkbox" 
-                checked={selectedFiles.includes(file)} 
-                onChange={() => {}} // Handled by li onClick
-                style={{ cursor: 'pointer' }}
+                checked={selectedFiles.includes(file.name)} 
+                disabled={!file.isIndexed}
+                onChange={() => {}} 
+                style={{ cursor: file.isIndexed ? 'pointer' : 'default' }}
               />
-              <span style={{ 
-                flex: 1, 
-                overflow: 'hidden', 
-                textOverflow: 'ellipsis', 
-                whiteSpace: 'nowrap',
-                fontSize: '0.85rem'
-              }}>
-                {file}
-              </span>
+              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <span style={{ 
+                  overflow: 'hidden', 
+                  textOverflow: 'ellipsis', 
+                  whiteSpace: 'nowrap',
+                  fontSize: '0.85rem',
+                  fontWeight: selectedFiles.includes(file.name) ? 600 : 400
+                }}>
+                  {file.name}
+                </span>
+                {!file.isIndexed && (
+                  <span style={{ fontSize: '0.65rem', color: 'var(--primary-color)', fontWeight: 700 }}>
+                    Indexing...
+                  </span>
+                )}
+              </div>
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (window.confirm(`Delete ${file}?`)) onDeleteFile(file);
+                  if (window.confirm(`Delete ${file.name}?`)) onDeleteFile(file.name);
                 }}
                 style={{ 
                   background: 'none', 

@@ -10,11 +10,30 @@ class DeleteRequest(BaseModel):
 
 @router.get("/files")
 async def list_files():
-    """Returns a list of all uploaded filenames."""
+    """Returns a list of all uploaded filenames with their indexing status."""
     if not os.path.exists("uploads"):
         return {"files": []}
-    files = [f for f in os.listdir("uploads") if f.endswith(".pdf")]
-    return {"files": files}
+    
+    all_files = [f for f in os.listdir("uploads") if f.endswith(".pdf")]
+    indexed_files = rag_service.retrieval_service.doc_to_ids.keys()
+    
+    files_with_status = []
+    for f in all_files:
+        files_with_status.append({
+            "name": f,
+            "isIndexed": f in indexed_files
+        })
+        
+    return {"files": files_with_status}
+
+@router.get("/stats")
+async def get_stats():
+    """Returns debug information about the vector index."""
+    return {
+        "total_chunks": rag_service.retrieval_service.index.ntotal,
+        "indexed_documents": list(rag_service.retrieval_service.doc_to_ids.keys()),
+        "metadata_count": len(rag_service.retrieval_service.metadata)
+    }
 
 @router.delete("/delete-file")
 async def delete_file(request: DeleteRequest):

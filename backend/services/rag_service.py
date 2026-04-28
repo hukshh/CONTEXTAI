@@ -90,13 +90,14 @@ Original query: {query}
         Improved pipeline for query: Rewrite -> Embed -> Retrieve -> Generate
         """
         # 1. Detect if it's a summary request
-        is_summary = any(word in question.lower() for word in ["summary", "summarize", "overview", "sumamry"])
+        is_summary = any(word in question.lower() for word in ["summary", "summarize", "overview"])
         
         # 2. Rewrite query
         rewritten_query = await self.rewrite_query(question)
         
-        # 3. Embed rewritten query
-        query_embedding = self.embedding_service.get_embedding(rewritten_query)
+        # 3. Embed rewritten query (Run in thread to avoid blocking event loop)
+        import anyio
+        query_embedding = await anyio.to_thread.run_sync(self.embedding_service.get_embedding, rewritten_query)
         
         # 4. Retrieve (Include filtering by selected_docs)
         k = 10 if is_summary else 5

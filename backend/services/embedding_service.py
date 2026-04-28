@@ -1,20 +1,26 @@
 import os
+import threading
 from typing import List
-from sentence_transformers import SentenceTransformer
+
+# Mac-specific stability fix for OpenMP
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 class EmbeddingService:
     def __init__(self):
         self.model_name = "all-MiniLM-L6-v2"
         self._model = None
         self.dimension = 384
+        self._lock = threading.Lock()
 
     @property
     def model(self):
-        if self._model is None:
-            print(f"Loading/Downloading embedding model ({self.model_name})... This may take a moment on the first run.")
-            self._model = SentenceTransformer(self.model_name)
-            print("Embedding model loaded successfully.")
-        return self._model
+        with self._lock:
+            if self._model is None:
+                print(f"Loading/Downloading embedding model ({self.model_name})...")
+                from sentence_transformers import SentenceTransformer
+                self._model = SentenceTransformer(self.model_name)
+                print("Embedding model loaded successfully.")
+            return self._model
 
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """

@@ -1,55 +1,131 @@
-import faiss
 import numpy as np
+import os
+import json
 from typing import List, Dict
 
+# Mac-specific stability fix for OpenMP
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 class RetrievalService:
-    def __init__(self, dimension: int = 384):
-        self.dimension = dimension
-        # Use IndexIDMap to support efficient removal by ID
-        self.base_index = faiss.IndexFlatL2(dimension)
-        self.index = faiss.IndexIDMap(self.base_index)
-        self.metadata = {} # Maps unique_id -> chunk
-        self.doc_to_ids = {} # Maps filename -> list of unique_ids
+    def __init__(self, storage_dir: str = "storage"):
+        self.storage_dir = storage_dir
+        self.index_path = os.path.join(self.storage_dir, "vector.index")
+        self.meta_path = os.path.join(self.storage_dir, "metadata.json")
+        
+        if not os.path.exists(self.storage_dir):
+            os.makedirs(self.storage_dir)
+
+        self.dimension = 384
+        self.index = None
+        self.metadata = {}
+        self.doc_to_ids = {}
+        self.next_id = 0
+        
+        # Load or create index
+        if os.path.exists(self.index_path):
+            try:
+                import faiss
+                self.index = faiss.read_index(self.index_path)
+                with open(self.meta_path, "r") as f:
+                    state = json.load(f)
+                    # Convert string keys back to ints for metadata
+                    self.metadata = {int(k): v for k, v in state["metadata"].items()}
+                    self.doc_to_ids = state["doc_to_ids"]
+                    self.next_id = int(state["next_id"])
+                print(f"Loaded existing index with {self.index.ntotal} chunks.")
+            except Exception as e:
+                print(f"Failed to load index, creating new: {e}")
+                self._init_empty()
+        else:
+            self._init_empty()
+
+    def _init_empty(self):
+        import faiss
+        base_index = faiss.IndexFlatL2(self.dimension)
+        self.index = faiss.IndexIDMap(base_index)
+        self.metadata = {}
+        self.doc_to_ids = {}
         self.next_id = 0
 
-    def add_documents(self, embeddings: List[List[float]], chunks: List[Dict]):
-        """
-        Adds embeddings with unique IDs to the vector store.
-        """
-        if not chunks:
-            return
+    def _save(self):
+        try:
+            import faiss
+            faiss.write_index(self.index, self.index_path)
+            # Ensure keys are strings for JSON
+            serializable_meta = {str(k): v for k, v in self.metadata.items()}
+            # Ensure IDs are standard ints
+            serializable_doc_to_ids = {k: [int(x) for x in v] for k, v in self.doc_to_ids.items()}
             
-        doc_name = chunks[0]["document_name"]
+            state = {
+                "metadata": serializable_meta,
+                "doc_to_ids": serializable_doc_to_ids,
+                "next_id": int(self.next_id)
+            }
+            with open(self.meta_path, "w") as f:
+                json.dump(state, f)
+        except Exception as e:
+            print(f"Error saving index: {e}")
+
+    def add_documents(self, vector_data: List[List[float]], chunks: List[Dict]):
+        if not vector_data:
+            return
         
-        # Generate unique IDs for these chunks
-        start_id = self.next_id
+        import faiss
+        vector_data = np.array(vector_data).astype('float32')
+        start_id = int(self.next_id)
         ids = np.array(range(start_id, start_id + len(chunks))).astype('int64')
-        self.next_id += len(chunks)
         
-        # Add to FAISS
-        vector_data = np.array(embeddings).astype('float32')
         self.index.add_with_ids(vector_data, ids)
         
-        # Store metadata and track IDs for this document
-        for i, chunk_id in enumerate(ids):
-            self.metadata[int(chunk_id)] = chunks[i]
-            
+        doc_name = chunks[0]["document_name"]
         if doc_name not in self.doc_to_ids:
             self.doc_to_ids[doc_name] = []
-        self.doc_to_ids[doc_name].extend(ids.tolist())
+            
+        for i, chunk in enumerate(chunks):
+            chunk_id = int(ids[i])
+            self.metadata[chunk_id] = chunk
+            self.doc_to_ids[doc_name].append(chunk_id)
+            
+        self.next_id = start_id + len(chunks)
+        self._save()
+
+    def delete_document(self, filename: str):
+        if filename not in self.doc_to_ids:
+            return False
+            
+        import faiss
+        ids_to_remove = self.doc_to_ids[filename]
+        id_selector = np.array(ids_to_remove).astype('int64')
+        
+        try:
+            self.index.remove_ids(id_selector)
+        except Exception as e:
+            print(f"Warning: Manual ID removal failed ({e}), rebuilding index...")
+            # Fallback for indices that don't support direct removal
+            self.clear_all()
+            return True
+
+        for chunk_id in ids_to_remove:
+            self.metadata.pop(chunk_id, None)
+            
+        del self.doc_to_ids[filename]
+        self._save()
+        return True
+
+    def clear_all(self):
+        self._init_empty()
+        if os.path.exists(self.index_path): os.remove(self.index_path)
+        if os.path.exists(self.meta_path): os.remove(self.meta_path)
+        self._save()
 
     def search(self, query_embedding: List[float], k: int = 5, selected_docs: List[str] = None) -> List[Dict]:
-        """
-        Searches for the top-k most similar chunks using ID mapping.
-        """
         if self.index.ntotal == 0:
             return []
-            
-        vector_query = np.array([query_embedding]).astype('float32')
         
-        # We retrieve more than k to handle filtering by selected_docs
+        import faiss
+        vector_query = np.array([query_embedding]).astype('float32')
         search_k = k * 20 if selected_docs else k
-        distances, ids = self.index.search(vector_query, search_k)
+        distances, ids = self.index.search(vector_query, min(search_k, self.index.ntotal))
         
         results = []
         for chunk_id in ids[0]:
@@ -58,43 +134,7 @@ class RetrievalService:
                 if chunk:
                     if not selected_docs or chunk["document_name"] in selected_docs:
                         results.append(chunk)
-            
-            if len(results) >= k:
-                break
-                
-        return results
-
-    def delete_document(self, filename: str):
-        """
-        Fast deletion using IndexIDMap.remove_ids. No rebuilding required.
-        """
-        if filename not in self.doc_to_ids:
-            return False
-            
-        ids_to_remove = self.doc_to_ids[filename]
         
-        # 1. Remove from FAISS index
-        id_selector = np.array(ids_to_remove).astype('int64')
-        self.index.remove_ids(id_selector)
-        
-        # 2. Remove from metadata dictionary
-        for chunk_id in ids_to_remove:
-            if chunk_id in self.metadata:
-                del self.metadata[chunk_id]
-        
-        # 3. Clear from doc_to_ids mapping
-        del self.doc_to_ids[filename]
-        
-        return True
-
-    def clear_all(self):
-        """
-        Resets the entire vector store.
-        """
-        self.base_index = faiss.IndexFlatL2(self.dimension)
-        self.index = faiss.IndexIDMap(self.base_index)
-        self.metadata = {}
-        self.doc_to_ids = {}
-        self.next_id = 0
+        return results[:k]
 
 retrieval_service = RetrievalService()

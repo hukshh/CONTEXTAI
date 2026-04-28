@@ -5,9 +5,9 @@ import ChatInterface from '../components/ChatInterface';
 import { listFiles, deleteFile, clearAllData } from '../services/api';
 
 export default function Home() {
-  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<{name: string, isIndexed: boolean}[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [chatKey, setChatKey] = useState(0); // Used to force-clear ChatInterface state
+  const [chatKey, setChatKey] = useState(0);
 
   const fetchFiles = async () => {
     try {
@@ -20,27 +20,34 @@ export default function Home() {
     }
   };
 
-  // Sync with backend on mount
   useEffect(() => {
     fetchFiles().then(files => {
-      // Default select all on first load
-      setSelectedFiles(files);
+      // Auto-select already indexed files
+      const indexed = files.filter((f: any) => f.isIndexed).map((f: any) => f.name);
+      setSelectedFiles(indexed);
     });
   }, []);
 
   const handleUploadSuccess = (filename: string) => {
-    // Start polling for the file until it appears in the list
+    // Start polling for the file until it is fully indexed
     let attempts = 0;
     const interval = setInterval(async () => {
       attempts++;
-      const currentFiles = await fetchFiles();
-      if (currentFiles.includes(filename) || attempts > 60) { // 2 mins timeout
-        clearInterval(interval);
-        if (currentFiles.includes(filename)) {
-          setSelectedFiles(prev => Array.from(new Set([...prev, filename])));
+      try {
+        const currentFiles = await fetchFiles();
+        const file = currentFiles.find((f: any) => f.name === filename);
+        
+        // Stop polling if file is indexed or we timed out (10 minutes)
+        if ((file && file.isIndexed) || attempts > 300) {
+          clearInterval(interval);
+          if (file && file.isIndexed) {
+            setSelectedFiles(prev => Array.from(new Set([...prev, filename])));
+          }
         }
+      } catch (error) {
+        console.error("Polling error:", error);
       }
-    }, 2000); // Poll every 2 seconds
+    }, 2000);
   };
 
   const handleDeleteFile = async (filename: string) => {
@@ -65,7 +72,7 @@ export default function Home() {
   };
 
   return (
-    <div className="app-container">
+    <div className="app-container" suppressHydrationWarning>
       <Head>
         <title>ContextAI - Intelligence for your documents</title>
         <meta name="description" content="Production-ready AI document assistant" />
