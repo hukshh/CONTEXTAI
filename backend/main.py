@@ -1,13 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.routes import upload, chat, search, files
+import os
 
 app = FastAPI(title="ContextAI API")
 
 # Configure CORS
+origins = [
+    os.getenv("FRONTEND_URL", "*")
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this in production
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
