@@ -5,15 +5,20 @@ import os
 
 app = FastAPI(title="ContextAI API")
 
-# Configure CORS
-origins = [
-    os.getenv("FRONTEND_URL", "*")
-]
+# Configure CORS safely
+frontend_url = os.getenv("FRONTEND_URL", "*").strip()
+if frontend_url.endswith("/"):
+    frontend_url = frontend_url[:-1]
+
+origins = [frontend_url]
+# Fallback local origins just in case
+if frontend_url != "*":
+    origins.extend(["http://localhost:3000", "http://127.0.0.1:3000"])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"] if frontend_url == "*" else origins,
+    allow_credentials=False if frontend_url == "*" else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
