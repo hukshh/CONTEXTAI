@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.routes import upload, chat, search, files
+from routes import upload, chat, search, files
 import os
 
 app = FastAPI(title="ContextAI API")

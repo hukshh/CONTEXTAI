@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from backend.services.rag_service import rag_service
+from services.rag_service import rag_service
 import os
 
 router = APIRouter()

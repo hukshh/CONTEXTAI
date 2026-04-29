@@ -1,9 +1,9 @@
 import os
 from openai import OpenAI
-from backend.services.embedding_service import EmbeddingService
-from backend.services.retrieval_service import retrieval_service
-from backend.utils.pdf_loader import extract_text_from_pdf
-from backend.utils.text_chunker import chunk_text
+from services.embedding_service import EmbeddingService
+from services.retrieval_service import retrieval_service
+from utils.pdf_loader import extract_text_from_pdf
+from utils.text_chunker import chunk_text
 from dotenv import load_dotenv
 import logging
 

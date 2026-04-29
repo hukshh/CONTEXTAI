@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from backend.services.rag_service import rag_service
+from services.rag_service import rag_service
 
 router = APIRouter()
 

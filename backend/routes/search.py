@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from backend.services.rag_service import rag_service
-from backend.services.embedding_service import EmbeddingService
-from backend.services.retrieval_service import retrieval_service
+from services.rag_service import rag_service
+from services.embedding_service import EmbeddingService
+from services.retrieval_service import retrieval_service
 
 router = APIRouter()
 embedding_service = EmbeddingService()

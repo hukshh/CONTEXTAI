@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, BackgroundTasks, HTTPException
 import os
 import shutil
 import uuid
-from backend.services.rag_service import rag_service
+from services.rag_service import rag_service
 
 router = APIRouter()
 
