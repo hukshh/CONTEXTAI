@@ -86,7 +86,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ selectedFiles }) => {
         }]);
       }
     } catch (error) {
-      console.error("Action error:", error);
       const errorMessage: Message = { role: 'assistant', content: "Sorry, I encountered an error. Please try again." };
       if (mode === 'chat') setChatMessages(prev => [...prev, errorMessage]);
       else setSearchMessages(prev => [...prev, errorMessage]);

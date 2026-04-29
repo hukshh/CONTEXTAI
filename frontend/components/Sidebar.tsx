@@ -39,7 +39,6 @@ const Sidebar: React.FC<SidebarProps> = ({
       onUploadSuccess(result.filename);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (error) {
-      console.error("Upload failed:", error);
       alert("Failed to upload file. Please ensure it is a valid PDF.");
       setIsUploading(false);
     }

@@ -12,10 +12,10 @@ export default function Home() {
   const fetchFiles = async () => {
     try {
       const data = await listFiles();
-      setUploadedFiles(data.files);
-      return data.files;
+      const filesToSet = data.files || [];
+      setUploadedFiles(filesToSet);
+      return filesToSet;
     } catch (error) {
-      console.error("Failed to fetch files:", error);
       return [];
     }
   };
@@ -45,7 +45,7 @@ export default function Home() {
           }
         }
       } catch (error) {
-        console.error("Polling error:", error);
+        // Polling error silently ignored in prod
       }
     }, 2000);
   };
@@ -53,10 +53,10 @@ export default function Home() {
   const handleDeleteFile = async (filename: string) => {
     try {
       await deleteFile(filename);
-      setUploadedFiles(prev => prev.filter(f => f !== filename));
+      setUploadedFiles(prev => prev.filter(f => f.name !== filename));
       setSelectedFiles(prev => prev.filter(f => f !== filename));
     } catch (error) {
-      console.error("Delete failed:", error);
+      // Handle error gracefully if needed
     }
   };
 
@@ -67,7 +67,7 @@ export default function Home() {
       setSelectedFiles([]);
       setChatKey(prev => prev + 1); // Reset chat state
     } catch (error) {
-      console.error("Clear all failed:", error);
+      // Clear all failed silently ignored
     }
   };
 
