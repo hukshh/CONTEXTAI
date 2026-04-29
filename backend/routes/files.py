@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from backend.services.rag_service import rag_service
 import os
@@ -10,39 +11,39 @@ class DeleteRequest(BaseModel):
 
 @router.get("/files")
 async def list_files():
-    """Returns a list of all uploaded filenames with their indexing status."""
-    if not os.path.exists("uploads"):
-        return {"files": []}
-    
-    all_files = [f for f in os.listdir("uploads") if f.endswith(".pdf")]
-    indexed_files = rag_service.retrieval_service.doc_to_ids.keys()
-    
-    files_with_status = []
-    for f in all_files:
-        files_with_status.append({
-            "name": f,
-            "isIndexed": f in indexed_files
-        })
+    try:
+        base_path = os.getenv("BASE_PATH", "./data")
+        uploads_dir = os.path.join(base_path, "uploads")
+        if not os.path.exists(uploads_dir):
+            return {"files": []}
         
-    return {"files": files_with_status}
+        all_files = [f for f in os.listdir(uploads_dir) if not f.startswith(".")]
+        indexed_files = rag_service.retrieval_service.doc_to_ids.keys()
+        files_with_status = []
+        for f in all_files:
+            files_with_status.append({
+                "name": f,
+                "isIndexed": f in indexed_files
+            })
+        return {"files": files_with_status}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": "Failed to list files"})
 
-@router.get("/stats")
-async def get_stats():
-    """Returns debug information about the vector index."""
-    return {
-        "total_chunks": rag_service.retrieval_service.index.ntotal,
-        "indexed_documents": list(rag_service.retrieval_service.doc_to_ids.keys()),
-        "metadata_count": len(rag_service.retrieval_service.metadata)
-    }
 
 @router.delete("/delete-file")
 async def delete_file(request: DeleteRequest):
-    success = rag_service.delete_file(request.filename)
-    if not success:
-        raise HTTPException(status_code=404, detail="File not found")
-    return {"message": f"Successfully deleted {request.filename}"}
+    try:
+        success = rag_service.delete_file(request.filename)
+        if not success:
+            return JSONResponse(status_code=404, content={"error": "File not found"})
+        return {"message": f"Successfully deleted {request.filename}"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": "Failed to delete file"})
 
 @router.delete("/clear-all")
 async def clear_all():
-    rag_service.clear_all()
-    return {"message": "All files and embeddings cleared"}
+    try:
+        rag_service.clear_all()
+        return {"message": "All files and embeddings cleared"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": "Failed to clear all files"})
