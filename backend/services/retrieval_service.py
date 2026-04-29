@@ -2,18 +2,22 @@ import numpy as np
 import os
 import json
 from typing import List, Dict
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Mac-specific stability fix for OpenMP
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 class RetrievalService:
-    def __init__(self, storage_dir: str = "storage"):
-        self.storage_dir = storage_dir
+    def __init__(self):
+        base_path = os.getenv("BASE_PATH", "./data")
+        self.storage_dir = os.path.join(base_path, "storage")
         self.index_path = os.path.join(self.storage_dir, "vector.index")
         self.meta_path = os.path.join(self.storage_dir, "metadata.json")
         
         if not os.path.exists(self.storage_dir):
-            os.makedirs(self.storage_dir)
+            os.makedirs(self.storage_dir, exist_ok=True)
 
         self.dimension = 384
         self.index = None
@@ -32,9 +36,9 @@ class RetrievalService:
                     self.metadata = {int(k): v for k, v in state["metadata"].items()}
                     self.doc_to_ids = state["doc_to_ids"]
                     self.next_id = int(state["next_id"])
-                print(f"Loaded existing index with {self.index.ntotal} chunks.")
+                logger.info(f"Loaded existing index with {self.index.ntotal} chunks.")
             except Exception as e:
-                print(f"Failed to load index, creating new: {e}")
+                logger.warning(f"Failed to load index, creating new: {e}")
                 self._init_empty()
         else:
             self._init_empty()
@@ -64,7 +68,7 @@ class RetrievalService:
             with open(self.meta_path, "w") as f:
                 json.dump(state, f)
         except Exception as e:
-            print(f"Error saving index: {e}")
+            logger.error(f"Error saving index: {e}")
 
     def add_documents(self, vector_data: List[List[float]], chunks: List[Dict]):
         if not vector_data:
@@ -100,7 +104,7 @@ class RetrievalService:
         try:
             self.index.remove_ids(id_selector)
         except Exception as e:
-            print(f"Warning: Manual ID removal failed ({e}), rebuilding index...")
+            logger.warning(f"Warning: Manual ID removal failed ({e}), rebuilding index...")
             # Fallback for indices that don't support direct removal
             self.clear_all()
             return True

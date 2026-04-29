@@ -1,6 +1,9 @@
 import os
 import threading
 from typing import List
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Mac-specific stability fix for OpenMP
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -16,10 +19,10 @@ class EmbeddingService:
     def model(self):
         with self._lock:
             if self._model is None:
-                print(f"Loading/Downloading embedding model ({self.model_name})...")
+                logger.info(f"Loading/Downloading embedding model ({self.model_name})...")
                 from sentence_transformers import SentenceTransformer
                 self._model = SentenceTransformer(self.model_name)
-                print("Embedding model loaded successfully.")
+                logger.info("Embedding model loaded successfully.")
             return self._model
 
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:

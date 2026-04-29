@@ -5,6 +5,9 @@ from backend.services.retrieval_service import retrieval_service
 from backend.utils.pdf_loader import extract_text_from_pdf
 from backend.utils.text_chunker import chunk_text
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from the backend folder
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
@@ -12,10 +15,10 @@ load_dotenv(dotenv_path=env_path)
 
 class RAGService:
     def __init__(self):
-        # Configure for Groq (OpenAI-compatible)
+        # Configure for Groq
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            print("WARNING: GROQ_API_KEY not set. Chat features will fail.")
+            logger.warning("GROQ_API_KEY not set. Chat features will fail.")
             self.client = None
         else:
             self.client = OpenAI(
@@ -24,7 +27,7 @@ class RAGService:
             )
         self.embedding_service = EmbeddingService()
         self.retrieval_service = retrieval_service
-        self.model = "llama-3.3-70b-versatile" # High-performance Groq model
+        self.model = "llama-3.3-70b-versatile" # Groq API model
 
     def process_document(self, file_path: str, filename: str):
         """
@@ -42,7 +45,7 @@ class RAGService:
             chunks = chunk_text(pages_content, filename)
             
             if not chunks:
-                print(f"Warning: No text extracted from {filename}")
+                logger.warning(f"No text extracted from {filename}")
                 return 0
                 
             # 4. Embed
@@ -52,10 +55,10 @@ class RAGService:
             # 5. Store
             self.retrieval_service.add_documents(embeddings, chunks)
             
-            print(f"Success: Processed {filename} ({len(chunks)} chunks)")
+            logger.info(f"Success: Processed {filename} ({len(chunks)} chunks)")
             return len(chunks)
         except Exception as e:
-            print(f"Error processing document {filename}: {e}")
+            logger.error(f"Error processing document {filename}: {e}")
             return 0
 
     async def rewrite_query(self, query: str) -> str:
@@ -82,7 +85,7 @@ Original query: {query}
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"Error rewriting query: {e}")
+            logger.error(f"Error rewriting query: {e}")
             return query
 
     async def answer_question(self, question: str, selected_docs: list[str] = None):
@@ -119,7 +122,7 @@ Original query: {query}
         
         if not self.client:
             return {
-                "answer": "Grok API key is missing. Please set it in the backend/.env file to enable chat features.",
+                "answer": "Groq API key is missing. Please set it in the backend/.env file to enable chat features.",
                 "sources": []
             }
 
@@ -150,8 +153,8 @@ Question:
             
             answer = response.choices[0].message.content
         except Exception as e:
-            print(f"Error calling LLM API: {e}")
-            answer = f"Error calling LLM API: {str(e)}"
+            logger.error(f"Error calling LLM API: {e}")
+            return {"error": "LLM request failed"}
         
         # Extract top unique sources with cleaned snippets
         source_list = []
@@ -167,8 +170,13 @@ Question:
                 else:
                     snippet = text
                 
+                # Remove UUID prefix (32 hex chars + underscore = 33 chars)
+                doc_name = c['document_name']
+                if len(doc_name) > 33 and doc_name[32] == '_':
+                    doc_name = doc_name[33:]
+                
                 source_list.append({
-                    "document": c['document_name'],
+                    "document": doc_name,
                     "page": c['page_number'],
                     "snippet": snippet
                 })
@@ -186,14 +194,20 @@ Question:
     def delete_file(self, filename: str):
         """Removes file from disk and vector store."""
         # 1. Remove from vector store
-        self.retrieval_service.delete_document(filename)
+        deleted_from_store = self.retrieval_service.delete_document(filename)
         
         # 2. Remove from disk
-        file_path = os.path.join("uploads", filename)
+        base_path = os.getenv("BASE_PATH", "./data")
+        file_path = os.path.join(base_path, "uploads", filename)
+        deleted_from_disk = False
         if os.path.exists(file_path):
-            os.remove(file_path)
-            return True
-        return False
+            try:
+                os.remove(file_path)
+                deleted_from_disk = True
+            except OSError:
+                pass
+                
+        return deleted_from_store or deleted_from_disk
 
     def clear_all(self):
         """Resets the entire system."""
@@ -201,9 +215,11 @@ Question:
         self.retrieval_service.clear_all()
         
         # 2. Clear uploads folder
-        if os.path.exists("uploads"):
-            for f in os.listdir("uploads"):
-                os.remove(os.path.join("uploads", f))
+        base_path = os.getenv("BASE_PATH", "./data")
+        uploads_dir = os.path.join(base_path, "uploads")
+        if os.path.exists(uploads_dir):
+            for f in os.listdir(uploads_dir):
+                os.remove(os.path.join(uploads_dir, f))
         return True
 
 rag_service = RAGService()
