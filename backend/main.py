@@ -16,7 +16,7 @@ if frontend_url != "*":
     origins.extend([
         "http://localhost:3000", 
         "http://127.0.0.1:3000",
-        "https://contextai-eight.vercel.app"
+        "https://contextai-seven.vercel.app"
     ])
 
 app.add_middleware(
