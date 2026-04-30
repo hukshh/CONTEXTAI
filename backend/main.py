@@ -13,7 +13,11 @@ if frontend_url.endswith("/"):
 origins = [frontend_url]
 # Fallback local origins just in case
 if frontend_url != "*":
-    origins.extend(["http://localhost:3000", "http://127.0.0.1:3000"])
+    origins.extend([
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",
+        "https://contextai-eight.vercel.app"
+    ])
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,3 +36,8 @@ app.include_router(files.router, prefix="/api", tags=["files"])
 @app.get("/")
 async def root():
     return {"message": "Welcome to ContextAI API"}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
