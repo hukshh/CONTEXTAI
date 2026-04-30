@@ -2,11 +2,9 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.rag_service import rag_service
-from services.embedding_service import EmbeddingService
 from services.retrieval_service import retrieval_service
 
 router = APIRouter()
-embedding_service = EmbeddingService()
 
 class SearchRequest(BaseModel):
     query: str
@@ -54,7 +52,7 @@ async def search_endpoint(request: SearchRequest):
                 
         # 2. Fallback to Semantic Search if NO exact matches found
         if len(results) == 0:
-            query_embedding = embedding_service.get_embedding(request.query)
+            query_embedding = rag_service.embedding_service.get_embedding(request.query)
             relevant_chunks = retrieval_service.search(query_embedding, k=10, selected_docs=request.selected_docs)
             
             for c in relevant_chunks:

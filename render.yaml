@@ -1,0 +1,26 @@
+# render.yaml — Render service config for ContextAI backend
+# Docs: https://render.com/docs/yaml-spec
+
+services:
+  - type: web
+    name: contextai-backend
+    runtime: docker          # Render will use the Dockerfile
+    dockerfilePath: ./Dockerfile
+    rootDir: backend          # Only the backend folder is the Docker build context
+    plan: starter             # starter = 512MB RAM, enough for fastembed + FAISS
+    healthCheckPath: /        # FastAPI root endpoint returns 200
+
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false           # Set this manually in the Render dashboard (secret)
+      - key: FRONTEND_URL
+        sync: false           # Set to your Vercel URL e.g. https://your-app.vercel.app
+      - key: BASE_PATH
+        value: /data
+      - key: PORT
+        value: "8000"
+
+    disk:
+      name: contextai-data
+      mountPath: /data        # Persistent disk — keeps FAISS index across deploys
+      sizeGB: 1

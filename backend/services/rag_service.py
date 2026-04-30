@@ -39,9 +39,11 @@ class RAGService:
             self.retrieval_service.delete_document(filename)
             
             # 2. Extract
+            logger.info(f"Extracting text from {filename}...")
             pages_content = extract_text_from_pdf(file_path)
             
             # 3. Chunk
+            logger.info(f"Chunking text for {filename}...")
             chunks = chunk_text(pages_content, filename)
             
             if not chunks:
@@ -50,9 +52,11 @@ class RAGService:
                 
             # 4. Embed
             texts = [c["text"] for c in chunks]
+            logger.info(f"Generating embeddings for {len(texts)} chunks of {filename}...")
             embeddings = self.embedding_service.get_embeddings(texts)
             
             # 5. Store
+            logger.info(f"Storing {len(chunks)} chunks in vector database for {filename}...")
             self.retrieval_service.add_documents(embeddings, chunks)
             
             logger.info(f"Success: Processed {filename} ({len(chunks)} chunks)")
@@ -64,14 +68,20 @@ class RAGService:
     async def rewrite_query(self, query: str) -> str:
         """
         Uses LLM to expand short/vague queries into descriptive search queries.
+        Returns 'GIBBERISH_INPUT' sentinel if the query is meaningless.
         """
         if not self.client:
             return query
             
-        prompt = f"""Rewrite the following user query to be a clear, detailed search query grounded in document context.
-- If the query is short (e.g., "in detail", "more", "explain"), expand it (e.g., "Provide more details about the previous topic from the document").
-- If the user asks for a "summary" or "overview", rewrite it as: "Provide a comprehensive overview of the main topics, key concepts, and important details discussed in the provided text."
-Return ONLY the rewritten query text.
+        prompt = f"""You are a query expansion assistant for a document Q&A system.
+
+Rules:
+- If the query is a real question or topic, rewrite it as a clear, detailed search query.
+- If the query is short but meaningful (e.g., "more", "explain"), expand it to "Provide more details about the previous topic from the document".
+- If the query asks for a "summary" or "overview", rewrite it as: "Provide a comprehensive overview of the main topics, key concepts, and important details discussed in the provided text."
+- If the query is random characters, gibberish, keyboard smashing, or completely meaningless (e.g., "sdfghjkl", "asdfgh", "qwerty", "zxcvbn"), return ONLY the exact text: GIBBERISH_INPUT
+
+Return ONLY the rewritten query text, or GIBBERISH_INPUT if meaningless.
 
 Original query: {query}
 """
@@ -90,13 +100,33 @@ Original query: {query}
 
     async def answer_question(self, question: str, selected_docs: list[str] = None):
         """
-        Improved pipeline for query: Rewrite -> Embed -> Retrieve -> Generate
+        Full RAG pipeline: Validate -> Rewrite -> Embed -> Retrieve -> Generate
         """
-        # 1. Detect if it's a summary request
+        # 1. Fast local gibberish check before any API call
+        #    If the input has no recognisable words (all chars are consonant clusters
+        #    with no spaces or vowels), reject immediately.
+        stripped = question.strip()
+        words = stripped.split()
+        VOWELS = set("aeiouAEIOU")
+        real_words = [w for w in words if any(c in VOWELS for c in w) or len(w) <= 2]
+        if len(words) > 0 and len(real_words) == 0:
+            return {
+                "answer": "Your message doesn't seem to contain a recognisable question. Please type something meaningful and try again.",
+                "sources": []
+            }
+
+        # 2. Detect if it's a summary request
         is_summary = any(word in question.lower() for word in ["summary", "summarize", "overview"])
         
-        # 2. Rewrite query
+        # 3. Rewrite query (LLM-assisted expansion)
         rewritten_query = await self.rewrite_query(question)
+
+        # Check if the LLM flagged the input as gibberish
+        if rewritten_query == "GIBBERISH_INPUT":
+            return {
+                "answer": "Your message doesn't seem to contain a recognisable question. Please type something meaningful and try again.",
+                "sources": []
+            }
         
         # 3. Embed rewritten query (Run in thread to avoid blocking event loop)
         import anyio

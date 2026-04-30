@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { uploadFile } from '../services/api';
 
 interface SidebarProps {
-  files: {name: string, isIndexed: boolean}[];
+  files: {name: string, displayName: string, isIndexed: boolean}[];
   selectedFiles: string[];
   onUploadSuccess: (filename: string) => void;
   onSelectionChange: (selected: string[]) => void;
@@ -35,7 +35,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       const result = await uploadFile(file);
       // Immediately clear loading so user can use the app
       setIsUploading(false);
-      alert(`Upload complete! "${result.filename}" is being processed in the background and will appear in the list shortly.`);
+      alert(`Upload complete! "${file.name}" is being processed in the background and will appear in the list shortly.`);
       onUploadSuccess(result.filename);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (error) {
@@ -143,7 +143,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   fontSize: '0.85rem',
                   fontWeight: selectedFiles.includes(file.name) ? 600 : 400
                 }}>
-                  {file.name}
+                  {file.displayName}
                 </span>
                 {!file.isIndexed && (
                   <span style={{ fontSize: '0.65rem', color: 'var(--primary-color)', fontWeight: 700 }}>
@@ -154,7 +154,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (window.confirm(`Delete ${file.name}?`)) onDeleteFile(file.name);
+                  if (window.confirm(`Delete ${file.displayName}?`)) onDeleteFile(file.name);
                 }}
                 style={{ 
                   background: 'none', 

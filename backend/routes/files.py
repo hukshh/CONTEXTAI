@@ -21,8 +21,12 @@ async def list_files():
         indexed_files = rag_service.retrieval_service.doc_to_ids.keys()
         files_with_status = []
         for f in all_files:
+            # Strip the UUID prefix (32 hex chars + 1 underscore) if it looks like our unique format
+            display_name = f[33:] if len(f) > 33 and f[32] == "_" else f
+            
             files_with_status.append({
                 "name": f,
+                "displayName": display_name,
                 "isIndexed": f in indexed_files
             })
         return {"files": files_with_status}

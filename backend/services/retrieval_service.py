@@ -6,9 +6,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Mac-specific stability fix for OpenMP
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-
 class RetrievalService:
     def __init__(self):
         base_path = os.getenv("BASE_PATH", "./data")
@@ -19,7 +16,7 @@ class RetrievalService:
         if not os.path.exists(self.storage_dir):
             os.makedirs(self.storage_dir, exist_ok=True)
 
-        self.dimension = 384
+        self.dimension = 384  # BGE-small-en-v1.5 via fastembed
         self.index = None
         self.metadata = {}
         self.doc_to_ids = {}
@@ -29,14 +26,24 @@ class RetrievalService:
         if os.path.exists(self.index_path):
             try:
                 import faiss
-                self.index = faiss.read_index(self.index_path)
-                with open(self.meta_path, "r") as f:
-                    state = json.load(f)
-                    # Convert string keys back to ints for metadata
-                    self.metadata = {int(k): v for k, v in state["metadata"].items()}
-                    self.doc_to_ids = state["doc_to_ids"]
-                    self.next_id = int(state["next_id"])
-                logger.info(f"Loaded existing index with {self.index.ntotal} chunks.")
+                loaded_index = faiss.read_index(self.index_path)
+
+                # Safety: reset if stored index dimension doesn't match current dimension
+                if loaded_index.d != self.dimension:
+                    logger.warning(
+                        f"Stored index dimension ({loaded_index.d}) != current dimension "
+                        f"({self.dimension}). Resetting index."
+                    )
+                    self._init_empty()
+                else:
+                    self.index = loaded_index
+                    with open(self.meta_path, "r") as f:
+                        state = json.load(f)
+                        # Convert string keys back to ints for metadata
+                        self.metadata = {int(k): v for k, v in state["metadata"].items()}
+                        self.doc_to_ids = state["doc_to_ids"]
+                        self.next_id = int(state["next_id"])
+                    logger.info(f"Loaded existing index with {self.index.ntotal} chunks.")
             except Exception as e:
                 logger.warning(f"Failed to load index, creating new: {e}")
                 self._init_empty()

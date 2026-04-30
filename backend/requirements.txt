@@ -1,12 +1,29 @@
-fastapi
-uvicorn
-python-multipart
-pydantic
-openai
-faiss-cpu
-pypdf
-tiktoken
-python-dotenv
-numpy
-sentence-transformers
-torch
+# ContextAI Backend Dependencies
+# Pinned to exact versions for reproducible Render deployments.
+# Run `pip install -r requirements.txt` to install locally.
+
+# Web framework
+fastapi==0.111.0
+uvicorn==0.30.1
+python-multipart==0.0.9
+
+# Data validation
+pydantic==2.7.0
+
+# LLM (Groq via OpenAI-compatible API)
+openai==2.33.0
+httpx>=0.27.0
+
+# Vector search
+faiss-cpu==1.13.0
+numpy==1.26.4
+
+# Embeddings — lightweight ONNX-based, no PyTorch required (~130 MB total)
+fastembed==0.7.4
+
+# PDF parsing
+pypdf==6.10.2
+
+# Utilities
+python-dotenv==1.2.1
+anyio==4.12.1

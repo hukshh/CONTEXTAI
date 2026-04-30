@@ -5,24 +5,22 @@ import os
 
 app = FastAPI(title="ContextAI API")
 
-# Configure CORS safely
-frontend_url = os.getenv("FRONTEND_URL", "*").strip()
-if frontend_url.endswith("/"):
-    frontend_url = frontend_url[:-1]
+# CORS: FRONTEND_URL is set as an env var on Render (your Vercel production URL).
+# Localhost is always allowed for local development.
+frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
 
-origins = [frontend_url]
-# Fallback local origins just in case
-if frontend_url != "*":
-    origins.extend([
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000",
-        "https://contextai-seven.vercel.app"
-    ])
+# Build allowed origins list
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+if frontend_url:
+    origins.append(frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if frontend_url == "*" else origins,
-    allow_credentials=False if frontend_url == "*" else True,
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

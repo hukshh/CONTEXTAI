@@ -5,7 +5,7 @@ import ChatInterface from '../components/ChatInterface';
 import { listFiles, deleteFile, clearAllData } from '../services/api';
 
 export default function Home() {
-  const [uploadedFiles, setUploadedFiles] = useState<{name: string, isIndexed: boolean}[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<{name: string, displayName: string, isIndexed: boolean}[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [chatKey, setChatKey] = useState(0);
 
@@ -37,8 +37,8 @@ export default function Home() {
         const currentFiles = await fetchFiles();
         const file = currentFiles.find((f: any) => f.name === filename);
         
-        // Stop polling if file is indexed or we timed out (10 minutes)
-        if ((file && file.isIndexed) || attempts > 300) {
+        // Stop polling if file is indexed or we timed out (3 minutes)
+        if ((file && file.isIndexed) || attempts > 60) {
           clearInterval(interval);
           if (file && file.isIndexed) {
             setSelectedFiles(prev => Array.from(new Set([...prev, filename])));
@@ -47,7 +47,7 @@ export default function Home() {
       } catch (error) {
         // Polling error silently ignored in prod
       }
-    }, 2000);
+    }, 3000);
   };
 
   const handleDeleteFile = async (filename: string) => {
