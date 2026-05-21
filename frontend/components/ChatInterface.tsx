@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { sendMessage, searchDocuments } from '../services/api';
+import ReactMarkdown from 'react-markdown';
 
 interface Source {
   document: string;
@@ -32,7 +33,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ selectedFiles }) => {
     if (selectedFiles.length === 0 && chatMessages.length > 0) {
       // Optional: auto-clear or just show warning
     }
-  }, [selectedFiles]);
+  }, [selectedFiles, chatMessages.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -168,7 +169,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ selectedFiles }) => {
             <div key={index} className={`message ${msg.role === 'user' ? 'user' : 'ai'}`}>
               <div className="message-sender">{msg.role === 'user' ? 'You' : (msg.isSearch ? 'Search Result' : 'Assistant')}</div>
               <div className="message-bubble">
-                {msg.content}
+                {msg.role === 'user' ? (
+                  msg.content
+                ) : (
+                  <div className="markdown-body">
+                    <ReactMarkdown children={msg.content} />
+                  </div>
+                )}
                 
                 {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
                   <div style={{ 
@@ -242,7 +249,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ selectedFiles }) => {
             placeholder={selectedFiles.length === 0 ? "Select a file to begin..." : (mode === 'chat' ? "Ask a question..." : "Enter keywords...")}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
             disabled={isLoading || selectedFiles.length === 0}
           />
           <button 
