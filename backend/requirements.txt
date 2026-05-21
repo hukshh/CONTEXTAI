@@ -9,8 +9,7 @@ pymupdf
 tiktoken
 python-dotenv
 numpy
-sentence-transformers
-torch
+fastembed
 celery
 redis
 sse-starlette
