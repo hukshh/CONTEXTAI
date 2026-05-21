@@ -1,16 +1,16 @@
-from pypdf import PdfReader
+import fitz
 from typing import List, Dict
 
 def extract_text_from_pdf(file_path: str) -> List[Dict]:
     """
-    Extracts text from each page of a PDF file.
+    Extracts text from each page of a PDF file using PyMuPDF (fitz).
     Returns a list of dictionaries containing text and page number.
     """
-    reader = PdfReader(file_path)
+    doc = fitz.open(file_path)
     pages_content = []
     
-    for i, page in enumerate(reader.pages):
-        text = page.extract_text()
+    for i, page in enumerate(doc):
+        text = page.get_text()
         if text.strip():
             pages_content.append({
                 "text": text,

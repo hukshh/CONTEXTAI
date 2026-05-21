@@ -5,8 +5,14 @@ pydantic
 openai
 faiss-cpu
 pypdf
+pymupdf
 tiktoken
 python-dotenv
 numpy
 sentence-transformers
 torch
+celery
+redis
+sse-starlette
+filelock
+boto3

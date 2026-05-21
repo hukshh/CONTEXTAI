@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Redis - used as Celery task broker and StatusManager pub-sub
+  redis:
+    image: redis:7-alpine
+    container_name: contextai_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  # FastAPI Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contextai_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - REDIS_URL=redis://redis:6379/0
+      - USE_CELERY=true
+      - BASE_PATH=/app/data
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      # Set cloud storage keys if needed
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_BUCKET_NAME=${AWS_BUCKET_NAME}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET}
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      - redis
+    restart: always
+
+  # Celery Background Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contextai_worker
+    command: celery -A tasks worker --loglevel=info
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - USE_CELERY=true
+      - BASE_PATH=/app/data
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_BUCKET_NAME=${AWS_BUCKET_NAME}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET}
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      - redis
+    restart: always
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: contextai_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  redis_data:
+  backend_data:

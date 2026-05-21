@@ -101,45 +101,25 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ selectedFiles }) => {
       {/* Mode Toggle Header */}
       <div style={{ 
         padding: '16px 24px', 
-        borderBottom: '1px solid var(--border-color)',
+        borderBottom: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
-        backgroundColor: 'var(--background)',
+        backgroundColor: 'transparent',
         zIndex: 10
       }}>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button 
             onClick={() => handleModeSwitch('chat')}
-            style={{
-              flex: 1,
-              padding: '10px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: mode === 'chat' ? 'var(--foreground)' : 'transparent',
-              color: mode === 'chat' ? 'var(--background)' : 'var(--foreground)',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              fontWeight: 600,
-              transition: 'all 0.2s'
-            }}
+            className={`mode-toggle-button ${mode === 'chat' ? 'active' : ''}`}
+            style={{ flex: 1, padding: '10px' }}
           >
             Chat Mode
           </button>
           <button 
             onClick={() => handleModeSwitch('search')}
-            style={{
-              flex: 1,
-              padding: '10px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: mode === 'search' ? 'var(--foreground)' : 'transparent',
-              color: mode === 'search' ? 'var(--background)' : 'var(--foreground)',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              fontWeight: 600,
-              transition: 'all 0.2s'
-            }}
+            className={`mode-toggle-button ${mode === 'search' ? 'active' : ''}`}
+            style={{ flex: 1, padding: '10px' }}
           >
             Search Mode
           </button>
@@ -149,7 +129,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ selectedFiles }) => {
           textTransform: 'uppercase', 
           letterSpacing: '0.05em', 
           fontWeight: 700,
-          color: 'var(--secondary-text)',
+          color: 'var(--text-secondary)',
           textAlign: 'center',
           display: 'flex',
           justifyContent: 'center',
@@ -158,11 +138,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ selectedFiles }) => {
         }}>
           <span>{mode === 'chat' ? 'AI Assistant' : 'Semantic Search'}</span>
           <span style={{ opacity: 0.3 }}>|</span>
-          <span style={{ color: selectedFiles.length > 0 ? 'var(--primary-color)' : '#ff4d4f' }}>
+          <span style={{ color: selectedFiles.length > 0 ? '#818cf8' : '#ef4444' }}>
             {selectedFiles.length} File(s) Active
           </span>
         </div>
       </div>
+
 
       <div className="chat-messages" style={{ flex: 1, overflowY: 'auto' }}>
         {currentMessages.length === 0 ? (

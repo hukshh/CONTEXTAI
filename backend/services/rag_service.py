@@ -1,11 +1,12 @@
 import os
+import fitz
+import logging
 from openai import OpenAI
 from services.embedding_service import EmbeddingService
 from services.retrieval_service import retrieval_service
-from utils.pdf_loader import extract_text_from_pdf
+from services.status_manager import status_manager
 from utils.text_chunker import chunk_text
 from dotenv import load_dotenv
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -29,36 +30,97 @@ class RAGService:
         self.retrieval_service = retrieval_service
         self.model = "llama-3.3-70b-versatile" # Groq API model
 
-    def process_document(self, file_path: str, filename: str):
+    def process_document(self, file_path: str, filename: str) -> int:
         """
-        Full pipeline for document processing: Load -> Chunk -> Embed -> Store
-        Runs in a background thread to avoid blocking the event loop.
+        Refactored highly-scalable document processing pipeline:
+        1. Parse PDF page-by-page incrementally using PyMuPDF (fitz)
+        2. Chunk page text incrementally
+        3. Generate embeddings in batches of 32
+        4. locked reload-add-save index
+        5. Sync document to cloud storage if enabled
+        Updates status dynamically at each step.
         """
         try:
-            # 1. Clear existing version
+            # 1. Initialize status
+            status_manager.update_status(filename, "parsing", progress=0.0)
+            
+            # Clear existing version from vector index
             self.retrieval_service.delete_document(filename)
             
-            # 2. Extract
-            pages_content = extract_text_from_pdf(file_path)
-            
-            # 3. Chunk
-            chunks = chunk_text(pages_content, filename)
-            
-            if not chunks:
-                logger.warning(f"No text extracted from {filename}")
-                return 0
+            # 2. Extract and Chunk Page-by-Page
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File not found: {file_path}")
                 
-            # 4. Embed
-            texts = [c["text"] for c in chunks]
-            embeddings = self.embedding_service.get_embeddings(texts)
+            doc = fitz.open(file_path)
+            total_pages = len(doc)
             
-            # 5. Store
-            self.retrieval_service.add_documents(embeddings, chunks)
+            if total_pages == 0:
+                raise ValueError("PDF file is empty or corrupted")
+                
+            doc_chunks = []
             
-            logger.info(f"Success: Processed {filename} ({len(chunks)} chunks)")
-            return len(chunks)
+            for i, page in enumerate(doc):
+                # Parsing phase covers 0% to 40% progress
+                progress = (i / total_pages) * 40.0
+                status_manager.update_status(
+                    filename, 
+                    "parsing", 
+                    progress=progress,
+                    current_page=i + 1,
+                    total_pages=total_pages
+                )
+                
+                text = page.get_text()
+                if not text.strip():
+                    continue
+                    
+                page_chunks = chunk_text([{"text": text, "page_number": i + 1}], filename)
+                if page_chunks:
+                    doc_chunks.extend(page_chunks)
+                    
+            if not doc_chunks:
+                raise ValueError("No readable text could be extracted from this PDF")
+                
+            # 3. Generate Embeddings in Batches (Covers 40% to 90% progress)
+            all_embeddings = []
+            batch_size = 32
+            total_chunks = len(doc_chunks)
+            
+            for start_idx in range(0, total_chunks, batch_size):
+                end_idx = min(start_idx + batch_size, total_chunks)
+                progress = 40.0 + (start_idx / total_chunks) * 50.0
+                status_manager.update_status(
+                    filename, 
+                    "embedding", 
+                    progress=progress,
+                    current_chunk=start_idx,
+                    total_chunks=total_chunks
+                )
+                
+                batch_chunks = doc_chunks[start_idx:end_idx]
+                batch_texts = [c["text"] for c in batch_chunks]
+                batch_embeddings = self.embedding_service.get_embeddings(batch_texts)
+                all_embeddings.extend(batch_embeddings)
+                
+            # 4. Store in Vector Index (Covers 90% to 95% progress)
+            status_manager.update_status(filename, "indexing", progress=90.0)
+            self.retrieval_service.add_documents(all_embeddings, doc_chunks)
+            
+            # 5. Upload original document to cloud storage if enabled
+            provider_type = os.getenv("STORAGE_PROVIDER", "local").lower().strip()
+            if provider_type in ["s3", "supabase"]:
+                status_manager.update_status(filename, "indexing", progress=95.0, message="Syncing document to cloud storage...")
+                from services.storage_service import storage_service
+                storage_service.upload_file(file_path, filename)
+                
+            # 6. Complete
+            status_manager.update_status(filename, "ready", progress=100.0)
+            logger.info(f"RAGService: Successfully ingested {filename} ({len(doc_chunks)} chunks).")
+            return len(doc_chunks)
+            
         except Exception as e:
-            logger.error(f"Error processing document {filename}: {e}")
+            logger.error(f"RAGService: Error processing document {filename}: {e}", exc_info=True)
+            status_manager.update_status(filename, "failed", error=str(e))
             return 0
 
     async def rewrite_query(self, query: str) -> str:
@@ -98,7 +160,7 @@ Original query: {query}
         # 2. Rewrite query
         rewritten_query = await self.rewrite_query(question)
         
-        # 3. Embed rewritten query (Run in thread to avoid blocking event loop)
+        # 3. Embed rewritten query
         import anyio
         query_embedding = await anyio.to_thread.run_sync(self.embedding_service.get_embedding, rewritten_query)
         
@@ -191,12 +253,16 @@ Question:
             "rewritten_query": rewritten_query
         }
 
-    def delete_file(self, filename: str):
-        """Removes file from disk and vector store."""
+    def delete_file(self, filename: str) -> bool:
+        """Removes file from storage, local cache, and vector store."""
         # 1. Remove from vector store
         deleted_from_store = self.retrieval_service.delete_document(filename)
         
-        # 2. Remove from disk
+        # 2. Delete from cloud storage if enabled
+        from services.storage_service import storage_service
+        deleted_from_storage = storage_service.delete_file(filename)
+        
+        # 3. Remove local file
         base_path = os.getenv("BASE_PATH", "./data")
         file_path = os.path.join(base_path, "uploads", filename)
         deleted_from_disk = False
@@ -207,19 +273,27 @@ Question:
             except OSError:
                 pass
                 
-        return deleted_from_store or deleted_from_disk
+        return deleted_from_store or deleted_from_storage or deleted_from_disk
 
     def clear_all(self):
         """Resets the entire system."""
         # 1. Reset vector store
         self.retrieval_service.clear_all()
         
-        # 2. Clear uploads folder
+        # 2. Clear local uploads folder and cloud files
+        from services.storage_service import storage_service
+        
         base_path = os.getenv("BASE_PATH", "./data")
         uploads_dir = os.path.join(base_path, "uploads")
         if os.path.exists(uploads_dir):
             for f in os.listdir(uploads_dir):
-                os.remove(os.path.join(uploads_dir, f))
+                if f.startswith("."):
+                    continue
+                storage_service.delete_file(f)
+                try:
+                    os.remove(os.path.join(uploads_dir, f))
+                except OSError:
+                    pass
         return True
 
 rag_service = RAGService()
